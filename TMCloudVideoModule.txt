@@ -1,0 +1,652 @@
+//Controller code
+        public ActionResult Videos()
+        {
+            DemoRequestsReportViewModel viewModel = new DemoRequestsReportViewModel();
+            viewModel = LoadFixedVideoData(viewModel);
+
+            return View(viewModel);
+        }
+
+        public ActionResult VideosUpdated()
+        {
+            DemoRequestsReportViewModel viewModel = new DemoRequestsReportViewModel();
+            viewModel = LoadFixedVideoData(viewModel);
+            viewModel.ModuleName = Globals.MODULE_TYPE_VIDEOS;
+            return View(viewModel);
+        }
+        public ActionResult SaveDemoVideo(IEnumerable<HttpPostedFileBase> files)
+        {
+            if (SaveDemoVideoFile(files))
+            {
+                // Success
+            }
+
+            return Content(string.Empty);
+        }
+
+        public bool SaveDemoVideoFile(IEnumerable<HttpPostedFileBase> files)
+        {
+            string fileName = string.Empty;
+            String virtualPath = string.Empty;
+
+            if (files != null)
+            {
+                foreach (var file in files)
+                {
+                    fileName = Path.GetFileName(file.FileName);
+                    virtualPath = Globals.VIRTUAL_PATH_DEMO_VIDEOS;
+                    String serverPath = Server.MapPath(@virtualPath);
+
+                    try
+                    {
+                        file.SaveAs(serverPath + Globals.SLASH + fileName);
+
+                        if (_accountMembershipService.AddVideoToList(fileName))
+                        {
+                            return true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Elmah.ErrorSignal.FromCurrentContext().Raise(ex);
+                    }
+                }
+            }
+
+            return false;
+        }
+
+
+                private DemoRequestsReportViewModel LoadFixedVideoData(DemoRequestsReportViewModel viewModel)
+        {
+            LookupTable demoTemplatesLookupTable = _lookupTableService.GetTable(LookupTableName.DemoTemplatesTable);
+            demoTemplatesLookupTable = Globals.PrependSelectOne(demoTemplatesLookupTable);
+            viewModel.TemplateList = LookupTableHelper.ToSingleSelect(demoTemplatesLookupTable);
+
+            viewModel.VideosMultiSelect = new MultiSelectViewModel(LookupTableName.DemoVideosTable);
+
+            // Video Types
+            LookupTable videoTypesLookupTable = _lookupTableService.GetTable(LookupTableName.VideoTypesTable);
+            ViewData["videotypes"] = videoTypesLookupTable;
+
+            return viewModel;
+        }
+
+        public ActionResult DemoVideos_Read([DataSourceRequest] DataSourceRequest request, DemoRequestsReportViewModel.DemoVideoSummary summary)
+        {
+
+            IDataSourceRequest dataSourceRequest = new DataSourceRequestWrapper(request);
+            IQueryable<Demo> demos = _accountMembershipService.GetDemos();
+            IQueryable<DemosToDemoVideo> demosToDemoVideos = _accountMembershipService.GetDemosToDemoVideos();
+            List<DemoRequestsReportViewModel.DemoVideoSummary> demoVideoSummaries = new List<DemoRequestsReportViewModel.DemoVideoSummary>();
+
+            foreach (Demo demo in demos)
+            {
+                List<Guid> videos = new List<Guid>();
+
+                DemoRequestsReportViewModel.DemoVideoSummary demoVideoSummary = new DemoRequestsReportViewModel.DemoVideoSummary();
+                demoVideoSummary.DemoVideoID = demo.ID;
+                demoVideoSummary.Template = demo.Template.Title;
+                demoVideoSummary.Date = demo.Date;
+                demoVideoSummary.ExpirationDate = demo.ExpirationDate;
+                //demoVideoSummary.ExpirationDateString = demo.ExpirationDate == null ? string.Empty : demo.ExpirationDate.Value.ToShortDateString();
+                //demoVideoSummary.FirstVisitDate = demo.FirstVisitDate == null ? string.Empty : demo.FirstVisitDate.Value.ToShortDateString();
+                //demoVideoSummary.LastVisitDate = demo.LastViewedDate == null ? string.Empty : demo.LastViewedDate.Value.ToShortDateString();
+                demoVideoSummary.FollowUpSentDate = demo.FollowUpSentDate == null ? string.Empty : demo.FollowUpSentDate.Value.ToShortDateString();
+                demoVideoSummary.Email = demo.Email;
+                demoVideoSummary.EmailTo = demo.EmailTo;
+                demoVideoSummary.Cc = demo.Cc;
+                demoVideoSummary.Bcc = demo.Bcc;
+                demoVideoSummary.Comments = demo.Comments;
+                demoVideoSummary.Subject = demo.Subject;
+                //demoVideoSummary.Views = demo.Views.ToString();
+
+                //IQueryable<DemosToDemoVideo> matchedDemoToDemoVideos = demosToDemoVideos.Where(x => x.DemoID == demo.ID);
+
+                //foreach (DemosToDemoVideo matchedDemoToDemoVideo in matchedDemoToDemoVideos)
+                //{
+                //    videos.Add(matchedDemoToDemoVideo.DemoVideoID.Value);
+                //}
+
+                //demoVideoSummary.Videos = videos;
+
+                if (string.IsNullOrWhiteSpace(demoVideoSummary.FollowUpSentDate))
+                {
+                    demoVideoSummary.IsFollowUpSent = false;
+                }
+                else
+                {
+                    demoVideoSummary.IsFollowUpSent = true;
+                }
+
+                demoVideoSummaries.Add(demoVideoSummary);
+            }
+
+            return Json(demoVideoSummaries.ToDataSourceResult(request));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public ActionResult DemoVideos_Update([DataSourceRequest] DataSourceRequest request, DemoRequestsReportViewModel.DemoVideoSummary summary)
+        {
+            _accountMembershipService.UpdateExpirationDate(summary);
+
+            // success
+
+            //IDataSourceRequest dataSourceRequest = new DataSourceRequestWrapper(request);
+            //IQueryable<Demo> demos = _accountMembershipService.GetDemos();
+            //IQueryable<DemosToDemoVideo> demosToDemoVideos = _accountMembershipService.GetDemosToDemoVideos();
+            List<DemoRequestsReportViewModel.DemoVideoSummary> demoVideoSummaries = new List<DemoRequestsReportViewModel.DemoVideoSummary>();
+            demoVideoSummaries.Add(summary);
+
+            var result = new DataSourceResult()
+            {
+                Data = demoVideoSummaries,
+            };
+
+            return Json(demoVideoSummaries.ToDataSourceResult(request, ModelState));
+        }
+
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public ActionResult DemosVideos_Delete([DataSourceRequest] DataSourceRequest request, DemoRequestsReportViewModel.DemoVideoSummary summary)
+        {
+            if (summary.DemoVideoID != Guid.Empty)
+            {
+                _accountMembershipService.DeleteDemoByID(summary.DemoVideoID);
+            }
+            List<DemoRequestsReportViewModel.DemoVideoSummary> cgservices = new List<DemoRequestsReportViewModel.DemoVideoSummary>();
+            cgservices.Add(summary);
+            return Json(cgservices.ToDataSourceResult(request, ModelState));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public ActionResult UpdateOrCreateDemo(DemoRequestsReportViewModel viewModel)
+        {
+            Guid id = Guid.Empty;
+            bool emailSent = true;
+            Demo demo = new Demo();
+            demo.ID = viewModel.DemoID;
+
+            demo.TemplateID = Guid.Parse(viewModel.TemplateIdString);
+            demo.Date = DateTime.Now;
+            demo.ExpirationDate = DateTime.Parse(viewModel.ExpirationDateString);
+            // Follow Up
+            demo.Email = viewModel.EmailHiddenFor == null ? string.Empty : HttpUtility.HtmlDecode(viewModel.EmailHiddenFor);
+            demo.EmailTo = viewModel.ToTextBox;
+            demo.Cc = viewModel.CcTextBox;
+            demo.Bcc = viewModel.BccTextBox;
+            demo.Comments = viewModel.CommentsTextBox;
+            demo.Subject = viewModel.SubjectTextBox;
+
+
+            // List<Guid> videos = viewModel.VideosMultiSelect.SelectedValues;
+            Guid SelectedVideoID = Guid.Empty;
+            if (viewModel.SelectedVideoIDs != null && viewModel.SelectedVideoIDs != "")
+            {
+                SelectedVideoID = Guid.Parse(viewModel.SelectedVideoIDs);
+                demo.VideoID = SelectedVideoID;
+            }
+
+            if (_accountMembershipService.UpdateOrCreateDemo(demo, SelectedVideoID, ref id))
+            {
+                string link = "<a href='" + viewModel.Url + "Common/Demos?id=" + id.ToString() + "'>Click Here</a>";
+                string from = Globals.EMAIL_HELP;
+                string body = demo.Email.Replace("{" + Resources.Templates.DemosModule.DemoLinkToken + "}", link)
+                                         .Replace("{" + Resources.Templates.DemosModule.ExpirationDateToken + "}", demo.ExpirationDate.Value.ToShortDateString());
+                string subject = demo.Subject;
+                string to = viewModel.ToTextBox;
+                string cc = viewModel.CcTextBox;
+                string bcc = viewModel.BccTextBox;
+                System.Net.Mail.MailMessage email = Globals.GenerateEmail(to, cc, bcc, subject, body, from);
+                emailSent = Globals.SendEmail(email);
+            }
+
+            return Json(emailSent);
+
+            // return RedirectToAction("VideosUpdated", "AccountStatistics");
+        }
+        #endregion Demo Videos
+
+
+//View Page code
+<%@ Page Title="" Language="C#" MasterPageFile="~/Views/Shared/SiteFluid.Master" Inherits="System.Web.Mvc.ViewPage<TMCloud.Areas.SuperAdmin.ViewModels.DemoRequests.DemoRequestsReportViewModel>" %>
+
+<asp:Content ID="TitleContent" ContentPlaceHolderID="TitleContent" runat="server">
+    <%:Resources.Admin.AccountStatistics.DemoRequests.Page %>
+</asp:Content>
+
+<asp:Content ID="Content2" ContentPlaceHolderID="MainContent" runat="server">
+    <script type="text/javascript">
+        $.ajaxSetup({ cache: false });
+
+        function DemoVideosGridLoaded(e) {
+            var grid = $('#demoVideosGrid').data().kendoGrid;
+            var items = grid.dataSource.data();
+            /* If grid is NOT empty, set section header text color to blue, otherwise grey */
+            if (items.length > 0) {
+                e.sender.wrapper.closest(".dragbox").find("h2").removeClass('emptyGrey');
+            }
+            else {
+                e.sender.wrapper.closest(".dragbox").find("h2").addClass('emptyGrey');
+            }
+        }
+        function DemoVideosGridError(e) {
+            // TODO: is there a way to determine the source grid from e?
+            GridError(e);
+            var grid = $('#demoVideosGrid').data('kendoGrid');
+            grid.one("dataBinding", function (e) {
+                e.preventDefault();   // cancel grid rebind
+            });
+        }
+
+        function ClearFields(isRowSelected) {
+            document.getElementById("EditableFieldsDiv").style.display = 'inline';
+
+            if (isRowSelected) {
+                $('#CreateRecordButton').val('Update');
+
+                document.getElementById("ReadOnlyDiv").style.display = 'inline';
+                document.getElementById("DeleteDiv").style.display = 'inline';
+            }
+            else {
+                $('#CreateRecordButton').val('Create and Send Email');
+                $('#TemplateID').val('00000000-0000-0000-0000-000000000000');
+                $('#DemoID').val('00000000-0000-0000-0000-000000000000');
+
+                if ($('#ReadOnlyDiv').css('display') == 'inline') {
+                    document.getElementById("ReadOnlyDiv").style.display = 'none';
+                }
+                document.getElementById("DeleteDiv").style.display = 'none';
+            }
+
+            document.getElementById('CreatedLabel').innerHTML = '';
+            document.getElementById('FirstVisitLabel').innerHTML = '';
+            document.getElementById('LastVisitLabel').innerHTML = '';
+            document.getElementById('ViewsLabel').innerHTML = '';
+
+            var editor = $("#EmailBody").data("kendoEditor");
+        }
+
+        function Validate() {
+            if ($("#TemplatesDropDown").val() == '00000000-0000-0000-0000-000000000000') {
+                alert("<%:Resources.Common.Common.AutoCompleteErrorPrefixLabel %>" + " " + "<%: Html.Raw(Resources.Admin.AccountStatistics.DemoRequests.Template) %>");
+                return false;
+            }
+
+            if ($("#ExpirationDatePicker").val() == "") {
+                alert("<%:Resources.Common.Common.AutoCompleteErrorPrefixLabel %>" + " " + "<%: Html.Raw(Resources.Admin.AccountStatistics.DemoRequests.ExpirationDate) %>");
+                return false;
+            }
+
+            if ($("#ToTextBox").val() == "") {
+                alert("<%:Resources.Common.Common.AutoCompleteErrorPrefixLabel %>" + " " + "<%: Html.Raw(Resources.Admin.AccountStatistics.DemoRequests.To) %>");
+                return false;
+            }
+
+            var editor = $("#EmailBody").data("kendoEditor");
+
+            if (editor.value() == "") {
+                alert("<%:Resources.Common.Common.AutoCompleteErrorPrefixLabel %>" + " " + "<%: Html.Raw(Resources.Admin.AccountStatistics.DemoRequests.To) %>");
+                return false;
+            }
+
+            return true;
+        }
+
+        function submitForm() {
+            if (Validate()) {
+                var editor = $("#EmailBody").data("kendoEditor");
+                $('#EmailHiddenFor').val(editor.value());
+
+                var pageURL = $(location).attr("href");
+                var url = pageURL.substr(0, pageURL.indexOf('SuperAdmin'));
+
+                $('#Url').val(url);
+
+                var $form = $('#updateOrCreateDemoForm');
+                $form.submit();
+            }
+        }
+
+        function onChangeExpirationDate(e) {
+            var expirationDateString = $('#ExpirationDatePicker').val();
+
+            $('#ExpirationDateString').val(expirationDateString);
+        }
+
+        function onChangeTemplate(e) {
+            var id = $('#TemplatesDropDown').val();
+
+            if (id != '00000000-0000-0000-0000-000000000000') {
+                //make an ajax call to get the profile image file name and path
+                var requestUrl = '<%: Url.Action("GetTemplateDetails", "AccountStatistics") %>' + '?templateID=' + id;
+                $.ajax({
+                    url: requestUrl,
+                    type: 'GET',
+                    success: function (result) {
+                        if (result.cc != null && result.cc != '') {
+                            $('#CcTextBox').val(result.cc);
+                        }
+                        else {
+                            $('#CcTextBox').val('');
+                        }
+
+                        if (result.bcc != null && result.bcc != '') {
+                            $('#BccTextBox').val(result.bcc);
+                        }
+                        else {
+                            $('#BccTextBox').val('');
+                        }
+
+                        if (result.subject != null && result.subject != '') {
+                            $('#SubjectTextBox').val(result.subject);
+                        }
+                        else {
+                            $('#SubjectTextBox').val('');
+                        }
+
+                        if (result.emailBody != null && result.emailBody != '') {
+                            var editor = $("#EmailBody").data("kendoEditor");
+                            editor.value(result.emailBody);
+                        }
+                        else {
+                            var editor = $("#EmailBody").data("kendoEditor");
+                            editor.value('');
+                        }
+                    }
+                });
+            }
+
+            var dropDown = $('#TemplatesDropDown').data('kendoDropDownList');
+            var selectedItem = dropDown.dataItem();
+            var templateID = selectedItem.Value;
+
+            $('#TemplateIdString').val(templateID);
+        }
+
+        function onChangeDemo(e) {
+
+            var selected = this.select()[0],
+            item = this.dataItem(selected);
+
+            ClearFields(true);
+
+            document.getElementById('CreatedLabel').innerHTML = item.Date;
+            document.getElementById('FirstVisitLabel').innerHTML = item.FirstVisitDate;
+            document.getElementById('LastVisitLabel').innerHTML = item.LastVisitDate;
+            document.getElementById('ViewsLabel').innerHTML = item.Views;
+
+            var editor = $("#EmailBody").data("kendoEditor");
+            editor.value(item.Email);
+
+            $('#DemoID').val(item.ID);
+
+            // Templates
+            $('#VideosMultiSelect').val(item.Videos);
+            $('#ExpirationDatePicker').val(item.ExpirationDateString);
+            $('#ExpirationDateString').val(item.ExpirationDateString);
+
+            $('#CommentsTextBox').val(item.Comments);
+            $('#ToTextBox').val(item.EmailTo);
+            $('#CcTextBox').val(item.Cc);
+            $('#BccTextBox').val(item.Bcc);
+            $('#SubjectTextBox').val(item.Subject);
+        }
+
+        function onSuccess(e) {
+            GoToUrl('/SuperAdmin/AccountStatistics/Videos');
+        }
+    </script>
+    <div class="grid_29 alpha omega">
+        <div class="insidePadding" style="background-color: white;">
+            <%: Html.LabelFor(m=>m.DemosHeaderLabel, new{ @class ="bold", style="font-size: 20px;"})%>
+
+            <div class="pad10">
+            </div>
+            <div class="grid_8 alpha omega">
+                <%= Html.Kendo().Upload()
+        .Name("files")
+        .Async(a => a
+            .Save("SaveDemoVideo", "AccountStatistics")
+            .AutoUpload(true)
+        )
+        .Events(events => events
+            .Success("onSuccess")
+        )
+        .Multiple(false)
+                %>
+            </div>
+        </div>
+        <div class="pad15">
+        </div>
+        <div class="left10 right10">
+            <% Html.Kendo().Grid(Model.DemoVideoDummyResults)
+                                                  .Name("demoVideosGrid")
+                                                                  .Columns(columns =>
+                                                                  {
+                                                                      columns.Bound(r => r.Date).Width(100).Title(Resources.Admin.AccountStatistics.DemoRequests.Created).HtmlAttributes(new { @style = "text-align:center" });
+                                                                      //columns.Bound(r => r.FirstVisitDate).Width(100).Title(Resources.Admin.AccountStatistics.DemoRequests.FirstVisit).HtmlAttributes(new { @style = "text-align:center" }).Hidden();
+                                                                      //columns.Bound(r => r.LastVisitDate).Width(100).Title(Resources.Admin.AccountStatistics.DemoRequests.LastVisit).HtmlAttributes(new { @style = "text-align:center" }).Hidden();
+                                                                      columns.Bound(r => r.EmailTo).Width(100).Title(Resources.Admin.AccountStatistics.DemoRequests.To).HtmlAttributes(new { @style = "text-align:center" });
+                                                                      columns.Bound(r => r.Cc).Width(100).Title(Resources.Admin.AccountStatistics.DemoRequests.Cc).HtmlAttributes(new { @style = "text-align:center" });
+                                                                      columns.Bound(r => r.Bcc).Width(100).Title(Resources.Admin.AccountStatistics.DemoRequests.Bcc).HtmlAttributes(new { @style = "text-align:center" });
+                                                                      columns.Bound(r => r.Comments).Width(100).Title(Resources.Admin.AccountStatistics.DemoRequests.Comments).HtmlAttributes(new { @style = "text-align:center" }).Hidden();
+                                                                      //columns.Bound(r => r.Views).Width(100).Title(Resources.Admin.AccountStatistics.DemoRequests.Views).HtmlAttributes(new { @style = "text-align:center" }).Hidden();
+                                                                      columns.Bound(r => r.Subject).Width(100).Title(Resources.Admin.AccountStatistics.DemoRequests.Subject).HtmlAttributes(new { @style = "text-align:center" });
+                                                                      columns.Bound(r => r.FollowUpSentDate).Width(100).Title(Resources.Admin.AccountStatistics.DemoRequests.FollowUpSent).HtmlAttributes(new { @style = "text-align:center" }).Hidden();
+                                                                      columns.Bound(r => r.Template).Width(100).Title(Resources.Admin.AccountStatistics.DemoRequests.Template).HtmlAttributes(new { @style = "text-align:center" }).Hidden();
+                                                                      columns.Bound(r => r.ExpirationDate).Width(100).Title(Resources.Admin.AccountStatistics.DemoRequests.ExpirationDate).Format("{0:" + TMCloud.Classes.UserContext.GetActiveUserData().OutputDateFormat + "}");
+                                                                  })
+                                                           .ToolBar(toolbar =>
+                                                           {
+                                                               toolbar.Template(() =>
+                                                               { %>
+            <div class="toolbar" id="DemoVideoToolBarDiv">
+                <span class="floatRight" id="AddDemoVideoSpan"><a class="k-button k-button-icontext" href="javascript:ClearFields(false);"><span class="k-icon k-i-plus-outline"></span><%: Resources.Admin.AccountStatistics.DemoRequests.AddDemoButton %></a></span>
+            </div>
+            <%});
+                                                           })
+                                 .DataSource(dataSource => dataSource
+                                     .Ajax()
+                                     .PageSize(99999)
+                                     .Model(model =>
+                                     {
+                                         model.Id(u => u.DemoVideoID);
+                                         model.Field(u => u.DemoVideoID).DefaultValue(Guid.Empty);
+                                     })
+                                     .Read(read => read.Action("DemoVideos_Read", "AccountStatistics"))
+                                     .Destroy(destroy => destroy.Action("DemosVideos_Delete", "AccountStatistics"))
+                                     .Sort(sort =>
+                                     {
+                                         //sort.Add(r => r.Classes);
+                                     })
+                                     .Events(ev =>
+                                     {
+                                         ev.Error("DemoVideosGridError");
+                                     })
+                                 )
+                                .Selectable(selectable => selectable
+                                    .Mode(GridSelectionMode.Single)
+                                    .Type(GridSelectionType.Row))
+                                 .Sortable(sortable => sortable.AllowUnsort(false))
+                                 .Reorderable(reorder => reorder.Columns(true))
+                                 .Events(ev =>
+                                 {
+                                     ev.Save("function(e) { setTimeout(function() { $('#demoVideosGrid').data('kendoGrid').dataSource.sync() } )} ");
+                                     ev.DataBound("DemoVideosGridLoaded");
+                                     ev.Change("onChangeDemo");
+                                 })
+                                 .ColumnMenu()
+                                 .Scrollable(a => a.Height("auto"))
+                                 .Navigatable()
+                                 .Resizable(resize => resize.Columns(true)).Render();
+            %>
+        </div>
+        <div class="pad20">
+        </div>
+        <div id="EditableFieldsDiv" class="grid_27 prefix_1 alpha omega" style="display: none;">
+            <% using (Html.BeginForm("UpdateOrCreateDemo", "AccountStatistics", FormMethod.Post, new { id = "updateOrCreateDemoForm" }))
+                { %>
+            <%: Html.AntiForgeryToken() %>
+            <%: Html.HiddenFor(m => m.DemoID) %>
+            <%: Html.HiddenFor(m => m.EmailHiddenFor) %>
+            <%: Html.HiddenFor(m => m.TemplateIdString) %>
+            <%: Html.HiddenFor(m => m.ExpirationDateString) %>
+            <%: Html.HiddenFor(m => m.Url) %>
+
+            <div class="grid_14 alpha">
+                <div class="grid_8 textRight alpha formBoldLabel">
+                    <%: Resources.Admin.AccountStatistics.DemoRequests.Videos %>
+                </div>
+                <div class="grid_20 textLeft omega formLabel">
+                    <%: Html.EditorFor(m => m.VideosMultiSelect)%>
+                </div>
+                <div class="pad5">
+                </div>
+                <div class="grid_8 textRight alpha formBoldLabel">
+                    <%: Resources.Admin.AccountStatistics.DemoRequests.Template %>
+                </div>
+                <div class="grid_20 textLeft omega formLabel">
+                    <%= Html.Kendo().DropDownList()
+                    .Name("TemplatesDropDown")
+                    .DataTextField("Text")
+                    .DataValueField("Value")
+	                .BindTo(Model.TemplateList)
+                    .Value(Model.TemplateID.ToString())
+                    .HtmlAttributes(new { style = "width: 100%" })
+	                .Events(e =>
+	                {
+                        e.Change("onChangeTemplate");
+                    })
+                    %>
+                </div>
+                <div class="pad5">
+                </div>
+                <div class="grid_8 textRight alpha formBoldLabel">
+                    <%: Resources.Admin.AccountStatistics.DemoRequests.ExpirationDate %>
+                </div>
+                <div class="grid_20 textLeft omega formLabel">
+                    <%= Html.Kendo().DatePicker()
+						    .Name("ExpirationDatePicker")
+						    .Format("dd MMM yyyy")
+						    .HtmlAttributes(new { style = "width:100%" })
+						    .Value(Model.ExpirationDate)
+                            .Events(e =>
+	                        {
+                                e.Change("onChangeExpirationDate");
+                            })
+                    %>
+                </div>
+                <div class="pad5">
+                </div>
+                <div class="grid_8 textRight alpha formBoldLabel">
+                    <%: Resources.Admin.AccountStatistics.DemoRequests.Comments %>
+                </div>
+                <div class="grid_20 textLeft omega formLabel">
+                    <%: Html.TextAreaFor(m => m.CommentsTextBox, new {@style = "width: 100%;height: 50px;", @class="k-input k-textbox k-input-solid k-input-md k-rounded-md" })%>
+                </div>
+                <div class="pad5">
+                </div>
+                <div id="ReadOnlyDiv" style="display: none;">
+                    <div class="grid_8 textRight alpha formBoldLabel">
+                        <%: Resources.Admin.AccountStatistics.DemoRequests.Created %>
+                    </div>
+                    <div class="grid_20 textLeft omega formLabel" style="line-height: 20px;">
+                        <label id="CreatedLabel"></label>
+                    </div>
+                    <div class="pad5">
+                    </div>
+                    <div class="grid_8 textRight alpha formBoldLabel">
+                        <%: Resources.Admin.AccountStatistics.DemoRequests.FirstVisit %>
+                    </div>
+                    <div class="grid_20 textLeft omega formLabel" style="line-height: 20px;">
+                        <label id="FirstVisitLabel"></label>
+                    </div>
+                    <div class="pad5">
+                    </div>
+                    <div class="grid_8 textRight alpha formBoldLabel">
+                        <%: Resources.Admin.AccountStatistics.DemoRequests.LastVisit %>
+                    </div>
+                    <div class="grid_20 textLeft omega formLabel" style="line-height: 20px;">
+                        <label id="LastVisitLabel"></label>
+                    </div>
+                    <div class="pad5">
+                    </div>
+                    <div class="grid_8 textRight alpha formBoldLabel">
+                        <%: Resources.Admin.AccountStatistics.DemoRequests.Views %>
+                    </div>
+                    <div class="grid_20 textLeft omega formLabel" style="line-height: 20px;">
+                        <label id="ViewsLabel"></label>
+                    </div>
+                    <div class="pad5">
+                    </div>
+                </div>
+            </div>
+            <div class="grid_13 prefix_1 omega">
+                <div id="EmailInfoDiv">
+                    <div class="grid_4 alpha formBoldLabel">
+                        <%: Resources.Admin.AccountStatistics.DemoRequests.To %>
+                    </div>
+                    <div class="grid_24 omega">
+                        <%: Html.TextBoxFor(m=>m.ToTextBox, new {@class="k-input k-textbox k-input-solid k-input-md k-rounded-md", @style="width:100%; font-size:12px"}) %>
+                    </div>
+                    <div class="pad5">
+                    </div>
+                    <div class="grid_4 alpha formBoldLabel">
+                        <%: Resources.Admin.AccountStatistics.DemoRequests.Cc %>
+                    </div>
+                    <div class="grid_24 omega">
+                        <%: Html.TextBoxFor(m=>m.CcTextBox, new {@class="k-input k-textbox k-input-solid k-input-md k-rounded-md", @style="width:100%; font-size:12px"}) %>
+                    </div>
+                    <div class="pad5">
+                    </div>
+                    <div class="grid_4 alpha formBoldLabel">
+                        <%: Resources.Admin.AccountStatistics.DemoRequests.Bcc %>
+                    </div>
+                    <div class="grid_24 omega">
+                        <%: Html.TextBoxFor(m=>m.BccTextBox, new {@class="k-input k-textbox k-input-solid k-input-md k-rounded-md", @style="width:100%; font-size:12px"}) %>
+                    </div>
+                    <div class="pad5">
+                    </div>
+                    <div class="grid_4 alpha formBoldLabel">
+                        <%: Resources.Admin.AccountStatistics.DemoRequests.Subject %>
+                    </div>
+                    <div class="grid_24 omega">
+                        <%: Html.TextBoxFor(m=>m.SubjectTextBox, new {@class="k-input k-textbox k-input-solid k-input-md k-rounded-md", @style="width:100%; font-size:12px"}) %>
+                    </div>
+                </div>
+                <div class="pad5">
+                </div>
+                <% Html.Kendo().EditorFor(m => m.EmailEditor)
+                                                .Name("EmailBody")
+                                                .HtmlAttributes(new { style = "height: 50px; line-height:20px;" })
+                                                .Value(Model.Email)
+                                                .Encode(false)
+                                                .Render();
+                %>
+            </div>
+            <div class="pad5">
+            </div>
+            <div class="floatRight">
+                <input id="CreateRecordButton" type="button" value="Create and Send Email" onclick="javascript: submitForm();" class="GreyButton floatRight" style="height: 30px;" />
+                <div id="DeleteDiv" class="floatRight left15" style="padding-right: 10px; display: none;">
+                    <div class="GreyButton" onclick="javascript:onDeleteRecord()">
+                        <div class="floatLeft">
+                            <img src="<%: Url.Content("~/Images/Icons/trash.png")%>" style="width: 16px; height: 16px" title="<%: Resources.Common.Common.Delete %>" alt="<%: Resources.Common.Common.Delete %>" />&nbsp;
+                        </div>
+                        <div class="floatRight">
+                            <div class="pad2"></div>
+                            <%: Resources.Common.Common.Delete %>
+                        </div>
+                        <div class="clear"></div>
+                    </div>
+                </div>
+            </div>
+            <% } %>
+        </div>
+    </div>
+</asp:Content>
+
